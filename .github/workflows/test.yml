@@ -58,7 +58,8 @@ jobs:
 
       - name: The job's token next to the project
         shell: bash
-        run: git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic c2VsZi10ZXN0"
+        run: |
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic c2VsZi10ZXN0"
 
       - name: It refuses to run there
         id: token
