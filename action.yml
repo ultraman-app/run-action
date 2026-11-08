@@ -1,0 +1,113 @@
+name: Ultraman run
+description: Run Ultraman pipelines or a load test in CI, with JUnit output. Secrets come from ULTRAMAN_SECRET_* variables and never reach the log.
+author: ultraman-app
+branding:
+  icon: activity
+  color: blue
+
+inputs:
+  pipelines:
+    description: Pipelines to run, one per line (names or ids). Empty with `args` like `--all` or `--tag smoke`.
+    required: false
+    default: ''
+  args:
+    description: More flags for `ultraman run`, such as `--all`, `--tag smoke`, `--parallel 4`, `--bail` or `--collection demo`.
+    required: false
+    default: ''
+  load:
+    description: A load test to run instead of pipelines (`ultraman run --load <test>`), with its thresholds deciding the exit code.
+    required: false
+    default: ''
+  env:
+    description: The environment to run with (ultraman/envs/<env>.yaml).
+    required: false
+    default: ''
+  local-env:
+    description: >
+      This environment's machine-only values (what ultraman/local/envs/<env>.yaml holds on a developer's machine), as
+      YAML `name: value` lines. Each value is masked in the log. Put credentials in ULTRAMAN_SECRET_* instead.
+    required: false
+    default: ''
+  allow:
+    description: >
+      Which secret may go to which origin, one `name=origin` per line (api_key=https://api.example.com). A pipeline that
+      would send a secret anywhere else is refused, so a changed pipeline can't send it to a host nobody approved.
+    required: false
+    default: ''
+  yes:
+    description: >
+      `true` passes --yes: every secret may go wherever the pipelines say, without `allow`. Only for pipelines nobody
+      outside your team can change (not on pull requests from forks).
+    required: false
+    default: 'false'
+  working-directory:
+    description: The folder that holds `ultraman/` (or one below it).
+    required: false
+    default: '.'
+  junit:
+    description: Where to write the JUnit report, relative to `working-directory`.
+    required: false
+    default: ultraman-junit.xml
+  version:
+    description: The Ultraman version to install (`0.6.0`), or `latest`.
+    required: false
+    default: latest
+
+outputs:
+  junit:
+    description: The JUnit report's path.
+    value: ${{ steps.run.outputs.junit }}
+  exit-code:
+    description: '0 passed, 1 a step or threshold failed, 2 it could not run (usage, consent, a missing value).'
+    value: ${{ steps.run.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    # The installers are this action's own copies (install/, taken from the release site with this version of the
+    # action), so a change to the site can't run here; they check the release's signed SHA256SUMS. The secrets the
+    # caller set for the run are removed from their environment.
+    - name: Install Ultraman (macOS, Linux)
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        for name in $(compgen -e | grep '^ULTRAMAN_SECRET_' || true); do unset "$name"; done
+        if [ "$INPUT_VERSION" = latest ]; then unset ULTRAMAN_VERSION; else export ULTRAMAN_VERSION="$INPUT_VERSION"; fi
+        sh "$GITHUB_ACTION_PATH/install/install.sh" --cli
+
+    - name: Install Ultraman (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        ULTRAMAN_CLI_ONLY: '1'
+        INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        Get-ChildItem env: | Where-Object Name -like 'ULTRAMAN_SECRET_*' | ForEach-Object { Remove-Item "env:$($_.Name)" }
+        if ($env:INPUT_VERSION -ne 'latest') { $env:ULTRAMAN_VERSION = $env:INPUT_VERSION }
+        & "$env:GITHUB_ACTION_PATH/install/install.ps1"
+
+    - name: Prepare
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        INPUT_ENV: ${{ inputs.env }}
+        INPUT_LOCAL_ENV: ${{ inputs.local-env }}
+        INPUT_ALLOW: ${{ inputs.allow }}
+      run: |
+        for name in $(compgen -e | grep '^ULTRAMAN_SECRET_' || true); do unset "$name"; done
+        node "$GITHUB_ACTION_PATH/prepare.mjs"
+
+    - name: Run
+      id: run
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        INPUT_PIPELINES: ${{ inputs.pipelines }}
+        INPUT_ARGS: ${{ inputs.args }}
+        INPUT_LOAD: ${{ inputs.load }}
+        INPUT_ENV: ${{ inputs.env }}
+        INPUT_YES: ${{ inputs.yes }}
+        INPUT_JUNIT: ${{ inputs.junit }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh"

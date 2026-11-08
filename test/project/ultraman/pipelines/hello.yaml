@@ -1,0 +1,14 @@
+name: hello
+description: the self-test's pipeline; the secret goes to the origin the workflow allowed
+host: "{{env.api}}"
+
+steps:
+  - request: hello
+    method: GET
+    path: /hello
+    query: { user: "{{env.user}}" }
+    headers: { authorization: "Bearer {{secrets.api_key}}" }
+
+  - assert: status
+    of: $hello
+    equals: 200

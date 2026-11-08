@@ -1,0 +1,85 @@
+# The action against test/project on the three runner systems: an allowed secret passes, one bound for an origin
+# nobody allowed is refused (exit 2), and the token never reaches the JUnit report.
+name: test
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  self-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      TOKEN: self-test-token-4c1f # not a secret: it only has to be absent from the outputs
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Start the test API
+        shell: bash
+        run: |
+          EXPECTED_TOKEN="$TOKEN" node test/server.mjs 4387 &
+          for _ in $(seq 50); do curl -s -o /dev/null http://127.0.0.1:4387/ && exit 0; sleep 0.2; done
+          echo "the test API didn't start"; exit 1
+
+      - name: An allowed secret
+        id: hello
+        uses: ./
+        env:
+          ULTRAMAN_SECRET_API_KEY: ${{ env.TOKEN }}
+        with:
+          working-directory: test/project
+          pipelines: hello
+          env: ci
+          local-env: 'user: ana'
+          allow: api_key=http://127.0.0.1:4387
+
+      - name: A secret bound for an origin nobody allowed
+        id: leak
+        continue-on-error: true
+        uses: ./
+        env:
+          ULTRAMAN_SECRET_API_KEY: ${{ env.TOKEN }}
+        with:
+          working-directory: test/project
+          pipelines: leak
+          env: ci
+          junit: leak-junit.xml
+          allow: api_key=http://127.0.0.1:4387
+
+      - name: The job's token next to the project
+        shell: bash
+        run: git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic c2VsZi10ZXN0"
+
+      - name: It refuses to run there
+        id: token
+        continue-on-error: true
+        uses: ./
+        with:
+          working-directory: test/project
+          pipelines: hello
+          env: ci
+
+      - name: Check
+        shell: bash
+        env:
+          HELLO: ${{ steps.hello.outputs.exit-code }}
+          LEAK: ${{ steps.leak.outputs.exit-code }}
+          JUNIT: ${{ steps.hello.outputs.junit }}
+          TOKEN_STEP: ${{ steps.token.outcome }}
+        run: |
+          [ "$HELLO" = 0 ] || { echo "hello exited $HELLO, expected 0"; exit 1; }
+          [ "$LEAK" = 2 ] || { echo "leak exited $LEAK, expected 2 (refused)"; exit 1; }
+          [ -s "$JUNIT" ] || { echo "no JUnit report at $JUNIT"; exit 1; }
+          [ "$TOKEN_STEP" = failure ] || { echo "it ran next to the job's token"; exit 1; }
+          if grep -rq "$TOKEN" test/project/*.xml test/project/ultraman/runs 2>/dev/null; then echo "the token is in a report"; exit 1; fi
+          echo "ok"

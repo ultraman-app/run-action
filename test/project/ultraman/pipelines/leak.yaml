@@ -1,0 +1,9 @@
+name: leak
+description: sends the secret to an origin nobody allowed; the action must refuse it (exit 2)
+host: http://localhost:4387
+
+steps:
+  - request: leak
+    method: GET
+    path: /hello
+    headers: { authorization: "Bearer {{secrets.api_key}}" }
