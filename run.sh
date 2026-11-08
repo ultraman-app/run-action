@@ -33,7 +33,7 @@ if [ "${RUNNER_OS:-}" = Windows ]; then
   # Git Bash can't hand arguments to ultraman.cmd intact: call its Node and script the way the .cmd does, with MSYS's
   # path conversion off (it would rewrite arguments starting with /).
   launcher=$(command -v ultraman.cmd) || fail "the ultraman command wasn't installed"
-  cli=$(dirname "$launcher")
+  cli=$(cygpath -m "$(dirname "$launcher")") # C:/…: bash runs it and Node reads it (a /c/… path would reach Node as C:\c\…)
   export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
   run_cli() { "$cli/node.exe" --experimental-strip-types --no-warnings=ExperimentalWarning "$cli/bin/ultraman.js" "$@"; }
   junit=$(cygpath -w "$junit")

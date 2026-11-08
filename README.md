@@ -63,11 +63,20 @@ What `allow` can't cover: a pull request that changes the workflow file itself r
 secrets to workflows from forks on `pull_request`; never check out a pull request's code under `pull_request_target`
 or `workflow_run` with your secrets around.
 
+### Files a request sends
+
+Only files under `ultraman/files/` go out without a yes (the desktop app copies the files you pick there). A body,
+multipart part, CA or stream message read from anywhere else in the repository needs a yes the first time, and a runner
+has nobody to give it: the run stops (exit 2) before anything is sent. Keep the files your requests send in
+`ultraman/files/`. `yes: true` lets them go too, with the same risk as below.
+
 ### The job's token
 
-`actions/checkout` keeps the job's GitHub token in `.git/config` unless `persist-credentials: false`, and a pipeline can
-send a project file as a request body. The action stops (exit 2) when it finds that token next to the project: check out
-with `persist-credentials: false`. The same goes for other credential files an earlier step leaves in the workspace.
+`actions/checkout` keeps the job's GitHub token in `.git/config` unless `persist-credentials: false`. Ultraman 0.6.2 and
+later never send a file under `.git`, but the action stops (exit 2) when it finds that token next to the project anyway,
+so a pinned older `version` or a later mistake can't send it: check out with `persist-credentials: false`. Other
+credential files an earlier step leaves in the workspace are covered by the rule above (outside `ultraman/files/`, they
+need a yes).
 
 ### `yes: true` is the risky way
 

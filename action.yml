@@ -49,7 +49,7 @@ inputs:
     required: false
     default: ultraman-junit.xml
   version:
-    description: The Ultraman version to install (`0.6.0`), or `latest`.
+    description: The Ultraman version to install (`0.6.2`), or `latest`.
     required: false
     default: latest
 
